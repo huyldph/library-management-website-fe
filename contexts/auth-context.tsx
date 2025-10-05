@@ -1,62 +1,57 @@
-"use client"
+"use client";
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import type { User } from "@/lib/types"
-import { getCurrentUser, login as authLogin, logout as authLogout } from "@/lib/auth"
+import {createContext, useContext, useEffect, useState, ReactNode} from "react";
+import {getToken, logout} from "@/lib/auth";
+import {jwtDecode} from "jwt-decode";
 
-interface AuthContextType {
-  user: User | null
-  loading: boolean
-  login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>
-  logout: () => void
-  isAuthenticated: boolean
+interface User {
+    sub: string;
+    scope: "ROLE_ADMIN" | "ROLE_STAFF" | "ROLE_MEMBER";
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+interface AuthContextType {
+    user: User | null;
+    isAuthenticated: boolean;
+    loading: boolean;
+    logout: () => void;
+}
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-  useEffect(() => {
-    // Check for existing session
-    const currentUser = getCurrentUser()
-    setUser(currentUser)
-    setLoading(false)
-  }, [])
+export function AuthProvider({children}: { children: ReactNode }) {
+    const [user, setUser] = useState<User | null>(null);
+    const [loading, setLoading] = useState(true);
 
-  const login = async (username: string, password: string) => {
-    const response = authLogin(username, password)
-    if (response.success && response.user) {
-      setUser(response.user)
-    }
-    return { success: response.success, message: response.message }
-  }
+    useEffect(() => {
+        const token = getToken();
+        if (token) {
+            try {
+                const decoded = jwtDecode<User>(token);
+                setUser(decoded);
+            } catch (e) {
+                console.error("Token decode failed:", e);
+                setUser(null);
+            }
+        } else {
+            setUser(null);
+        }
+        setLoading(false);
+    }, []);
 
-  const logout = () => {
-    authLogout()
-    setUser(null)
-  }
+    const handleLogout = () => {
+        logout();
+        setUser(null);
+    };
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        login,
-        logout,
-        isAuthenticated: !!user,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  )
+    return (
+        <AuthContext.Provider value={{user, isAuthenticated: !!user, loading, logout: handleLogout}}>
+            {children}
+        </AuthContext.Provider>
+    );
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider")
-  }
-  return context
+    const ctx = useContext(AuthContext);
+    if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+    return ctx;
 }

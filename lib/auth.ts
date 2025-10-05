@@ -1,72 +1,70 @@
-// Authentication utilities (mock implementation)
-import type { User } from "./types"
-import { mockUsers } from "./mock-data"
+"use client";
 
-const TOKEN_KEY = "library_auth_token"
-const USER_KEY = "library_user"
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
-export interface AuthResponse {
-  success: boolean
-  user?: User
-  token?: string
-  message?: string
+export async function login(username: string, password: string) {
+    try {
+        const res = await fetch(`${API_URL}/api/v1/auth/login`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({username, password}),
+        });
+
+        if (!res.ok) {
+            return {success: false, message: "Lỗi server khi đăng nhập"};
+        }
+
+        const data = await res.json();
+
+        if (data.code === 1000 && data.result?.token) {
+            localStorage.setItem("token", data.result.token);
+            return {success: true, token: data.result.token};
+        }
+
+        return {success: false, message: "Sai tài khoản hoặc mật khẩu"};
+    } catch (err) {
+        return {success: false, message: "Không thể kết nối server"};
+    }
 }
 
-export function login(username: string, password: string): AuthResponse {
-  // Mock authentication - in production, this would call an API
-  const user = mockUsers.find((u) => u.username === username)
+export async function register(user: {
+    username: string;
+    password: string;
+    fullName: string;
+    email: string;
+}) {
+    const res = await fetch(`${API_URL}/api/v1/auth/register`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(user),
+    });
 
-  if (!user) {
-    return { success: false, message: "Tên đăng nhập không tồn tại" }
-  }
-
-  // Mock password check (in production, use proper password hashing)
-  if (password !== "password123") {
-    return { success: false, message: "Mật khẩu không đúng" }
-  }
-
-  // Generate mock JWT token
-  const token = btoa(JSON.stringify({ userId: user.id, exp: Date.now() + 86400000 }))
-
-  // Store in localStorage
-  if (typeof window !== "undefined") {
-    localStorage.setItem(TOKEN_KEY, token)
-    localStorage.setItem(USER_KEY, JSON.stringify(user))
-  }
-
-  return { success: true, user, token }
+    return res.json();
 }
 
-export function logout(): void {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(USER_KEY)
-  }
+export async function refreshToken(token: string) {
+    const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({token}),
+    });
+
+    return res.json();
 }
 
-export function getCurrentUser(): User | null {
-  if (typeof window === "undefined") return null
+export async function logout() {
+    const token = localStorage.getItem("token");
+    if (!token) return;
 
-  const userStr = localStorage.getItem(USER_KEY)
-  if (!userStr) return null
+    await fetch(`${API_URL}/api/v1/auth/logout`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({token}),
+    });
 
-  try {
-    return JSON.parse(userStr)
-  } catch {
-    return null
-  }
+    localStorage.removeItem("token");
 }
 
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null
-  return localStorage.getItem(TOKEN_KEY)
-}
-
-export function isAuthenticated(): boolean {
-  return !!getToken()
-}
-
-export function hasRole(role: User["role"]): boolean {
-  const user = getCurrentUser()
-  return user?.role === role
+export function getToken() {
+    return localStorage.getItem("token");
 }
