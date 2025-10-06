@@ -6,10 +6,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { BookOpen, Users, TrendingUp, Clock, BarChart3 } from "lucide-react"
-import { getBooks, getMembers, getLoans, getBookCopies } from "@/lib/storage"
-import { startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths, isWithinInterval } from "date-fns"
+import { getReports, type DateRange as ApiDateRange } from "@/lib/api/reports"
+import { startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths } from "date-fns"
 
-type DateRange = "this-month" | "last-month" | "this-year" | "all-time"
+type DateRange = ApiDateRange
 
 export default function ReportsPage() {
   const [dateRange, setDateRange] = useState<DateRange>("this-month")
@@ -30,118 +30,9 @@ export default function ReportsPage() {
     calculateStats()
   }, [dateRange])
 
-  const calculateStats = () => {
-    const books = getBooks()
-    const members = getMembers()
-    const loans = getLoans()
-    const copies = getBookCopies()
-
-    // Calculate date range
-    const now = new Date()
-    let startDate: Date
-    let endDate: Date = now
-
-    switch (dateRange) {
-      case "this-month":
-        startDate = startOfMonth(now)
-        endDate = endOfMonth(now)
-        break
-      case "last-month":
-        const lastMonth = subMonths(now, 1)
-        startDate = startOfMonth(lastMonth)
-        endDate = endOfMonth(lastMonth)
-        break
-      case "this-year":
-        startDate = startOfYear(now)
-        endDate = endOfYear(now)
-        break
-      case "all-time":
-      default:
-        startDate = new Date(0)
-        endDate = now
-        break
-    }
-
-    // Filter loans by date range
-    const filteredLoans = loans.filter((loan) =>
-      isWithinInterval(new Date(loan.borrowDate), { start: startDate, end: endDate }),
-    )
-
-    // Calculate loan statistics
-    const totalLoans = filteredLoans.length
-    const activeLoans = filteredLoans.filter((l) => l.status === "borrowed").length
-    const returnedLoans = filteredLoans.filter((l) => l.status === "returned").length
-    const overdueLoans = filteredLoans.filter((l) => l.status === "borrowed" && new Date(l.dueDate) < now).length
-    const totalFines = filteredLoans.reduce((sum, loan) => sum + loan.fineAmount, 0)
-
-    // Calculate member statistics
-    const newMembers = members.filter((m) =>
-      isWithinInterval(new Date(m.joinDate), { start: startDate, end: endDate }),
-    ).length
-    const activeMembers = members.filter((m) => m.status === "active").length
-
-    // Calculate popular books
-    const bookLoanCounts = new Map<string, number>()
-    filteredLoans.forEach((loan) => {
-      const copy = copies.find((c) => c.id === loan.bookCopyId)
-      if (copy) {
-        const count = bookLoanCounts.get(copy.bookId) || 0
-        bookLoanCounts.set(copy.bookId, count + 1)
-      }
-    })
-
-    const popularBooks = Array.from(bookLoanCounts.entries())
-      .map(([bookId, count]) => {
-        const book = books.find((b) => b.id === bookId)!
-        return { title: book.title, author: book.author, count }
-      })
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10)
-
-    // Calculate category statistics
-    const categoryLoanCounts = new Map<string, number>()
-    filteredLoans.forEach((loan) => {
-      const copy = copies.find((c) => c.id === loan.bookCopyId)
-      if (copy) {
-        const book = books.find((b) => b.id === copy.bookId)
-        if (book) {
-          const count = categoryLoanCounts.get(book.category) || 0
-          categoryLoanCounts.set(book.category, count + 1)
-        }
-      }
-    })
-
-    const categoryStats = Array.from(categoryLoanCounts.entries())
-      .map(([category, count]) => ({ category, count }))
-      .sort((a, b) => b.count - a.count)
-
-    // Calculate member activity
-    const memberLoanCounts = new Map<string, number>()
-    filteredLoans.forEach((loan) => {
-      const count = memberLoanCounts.get(loan.memberId) || 0
-      memberLoanCounts.set(loan.memberId, count + 1)
-    })
-
-    const memberActivity = Array.from(memberLoanCounts.entries())
-      .map(([memberId, loanCount]) => {
-        const member = members.find((m) => m.id === memberId)!
-        return { name: member.name, cardNumber: member.cardNumber, loanCount }
-      })
-      .sort((a, b) => b.loanCount - a.loanCount)
-      .slice(0, 10)
-
-    setStats({
-      totalLoans,
-      activeLoans,
-      returnedLoans,
-      overdueLoans,
-      totalFines,
-      newMembers,
-      activeMembers,
-      popularBooks,
-      categoryStats,
-      memberActivity,
-    })
+  const calculateStats = async () => {
+    const api = await getReports(dateRange)
+    setStats(api)
   }
 
   const getDateRangeLabel = () => {
