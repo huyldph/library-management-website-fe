@@ -14,8 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Plus, Search, Pencil, Trash2, Eye } from "lucide-react"
-import { getMembers, saveMembers } from "@/lib/storage"
-import type { Member } from "@/lib/types"
+import { listMembers, createMember, updateMember, deleteMember, type AdminMember } from "@/lib/api/members"
 import { MemberForm } from "@/components/member-form"
 import { MemberDetailsDialog } from "@/components/member-details-dialog"
 import { useToast } from "@/hooks/use-toast"
@@ -49,13 +48,13 @@ const typeLabels = {
 }
 
 export default function MembersPage() {
-  const [members, setMembers] = useState<Member[]>([])
-  const [filteredMembers, setFilteredMembers] = useState<Member[]>([])
+  const [members, setMembers] = useState<AdminMember[]>([])
+  const [filteredMembers, setFilteredMembers] = useState<AdminMember[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [editingMember, setEditingMember] = useState<Member | null>(null)
-  const [viewingMember, setViewingMember] = useState<Member | null>(null)
-  const [deletingMember, setDeletingMember] = useState<Member | null>(null)
+  const [editingMember, setEditingMember] = useState<AdminMember | null>(null)
+  const [viewingMember, setViewingMember] = useState<AdminMember | null>(null)
+  const [deletingMember, setDeletingMember] = useState<AdminMember | null>(null)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -66,8 +65,8 @@ export default function MembersPage() {
     filterMembers()
   }, [searchQuery, members])
 
-  const loadMembers = () => {
-    const loadedMembers = getMembers()
+  const loadMembers = async () => {
+    const loadedMembers = await listMembers({ page: 1, size: 100 })
     setMembers(loadedMembers)
     setFilteredMembers(loadedMembers)
   }
@@ -89,56 +88,39 @@ export default function MembersPage() {
     setFilteredMembers(filtered)
   }
 
-  const handleAddMember = (memberData: Omit<Member, "id" | "registrationDate">) => {
-    const newMember: Member = {
-      ...memberData,
-      id: Date.now().toString(),
-      registrationDate: new Date(),
+  const handleAddMember = async (memberData: any) => {
+    const res = await createMember(memberData)
+    if (res?.code === 1000) {
+      await loadMembers()
+      setIsAddDialogOpen(false)
+      toast({ title: "Thành công", description: "Đã thêm độc giả mới" })
+    } else {
+      toast({ title: "Lỗi", description: res?.message || "Không thể thêm độc giả", variant: "destructive" })
     }
-
-    const updatedMembers = [...members, newMember]
-    saveMembers(updatedMembers)
-    setMembers(updatedMembers)
-    setIsAddDialogOpen(false)
-
-    toast({
-      title: "Thành công",
-      description: "Đã thêm độc giả mới",
-    })
   }
 
-  const handleEditMember = (memberData: Omit<Member, "id" | "registrationDate">) => {
+  const handleEditMember = async (memberData: any) => {
     if (!editingMember) return
-
-    const updatedMember: Member = {
-      ...memberData,
-      id: editingMember.id,
-      registrationDate: editingMember.registrationDate,
+    const res = await updateMember(editingMember.id, memberData)
+    if (res?.code === 1000) {
+      await loadMembers()
+      setEditingMember(null)
+      toast({ title: "Thành công", description: "Đã cập nhật thông tin độc giả" })
+    } else {
+      toast({ title: "Lỗi", description: res?.message || "Không thể cập nhật độc giả", variant: "destructive" })
     }
-
-    const updatedMembers = members.map((m) => (m.id === editingMember.id ? updatedMember : m))
-    saveMembers(updatedMembers)
-    setMembers(updatedMembers)
-    setEditingMember(null)
-
-    toast({
-      title: "Thành công",
-      description: "Đã cập nhật thông tin độc giả",
-    })
   }
 
-  const handleDeleteMember = () => {
+  const handleDeleteMember = async () => {
     if (!deletingMember) return
-
-    const updatedMembers = members.filter((m) => m.id !== deletingMember.id)
-    saveMembers(updatedMembers)
-    setMembers(updatedMembers)
-    setDeletingMember(null)
-
-    toast({
-      title: "Thành công",
-      description: "Đã xóa độc giả",
-    })
+    const res = await deleteMember(deletingMember.id)
+    if (res?.code === 1000) {
+      await loadMembers()
+      setDeletingMember(null)
+      toast({ title: "Thành công", description: "Đã xóa độc giả" })
+    } else {
+      toast({ title: "Lỗi", description: res?.message || "Không thể xóa độc giả", variant: "destructive" })
+    }
   }
 
   return (
@@ -208,8 +190,11 @@ export default function MembersPage() {
                   <TableCell>{member.phone}</TableCell>
                   <TableCell>{typeLabels[member.membershipType]}</TableCell>
                   <TableCell>
-                    <Badge variant="secondary" className={statusColors[member.membershipStatus]}>
-                      {statusLabels[member.membershipStatus]}
+                    <Badge
+                      variant="secondary"
+                      className={statusColors[(member.membershipStatus as keyof typeof statusColors) || "active"]}
+                    >
+                      {statusLabels[(member.membershipStatus as keyof typeof statusLabels) || "active"]}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-center">
