@@ -1,77 +1,71 @@
 import {NextResponse, type NextRequest} from "next/server";
-import {jwtVerify} from "jose";
-import {ROLES} from "./lib/constants"; // Import từ file constants
+import { decodeJwt } from "jose";
+import {ROLES} from "./lib/constants";
 
-type AppJwtPayload = {
-    sub: string;
-    scope: "ROLE_ADMIN" | "ROLE_STAFF" | "ROLE_MEMBER";
+type Role = typeof ROLES[keyof typeof ROLES];
+
+// --- Cấu hình phân quyền ---
+const routePermissions: Record<string, Role[]> = {
+    "/admin": [ROLES.ADMIN],
+    "/staff": [ROLES.ADMIN, ROLES.STAFF],
+    "/member": [ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER],
 };
 
-/**
- * Xác minh chữ ký của JWT bằng secret key.
- * @param token - Chuỗi JWT từ cookie.
- * @returns Payload của token nếu hợp lệ, ngược lại trả về null.
- */
-async function verifyToken(token: string): Promise<AppJwtPayload | null> {
-    if (!process.env.JWT_SECRET_KEY) {
-        console.error("JWT_SECRET_KEY is not set in .env.local");
-        return null;
-    }
-
+// --- Hàm trợ giúp ---
+function decodeToken(token: string) {
     try {
-        const secret = new TextEncoder().encode(process.env.JWT_SECRET_KEY);
-        const {payload} = await jwtVerify(token, secret);
-
-        // Ép kiểu cho payload để tránh TS báo đỏ
-        return payload as AppJwtPayload;
-    } catch (err) {
-        console.error("JWT Verification Failed:", err);
+        const payload = decodeJwt(token);
+        return payload as { sub?: string; scope?: "ROLE_ADMIN" | "ROLE_STAFF" | "ROLE_MEMBER" };
+    } catch {
         return null;
     }
 }
 
+// --- Middleware chính ---
 export async function middleware(request: NextRequest) {
-    const {pathname} = request.nextUrl;
     const token = request.cookies.get("token")?.value;
+    const {pathname} = request.nextUrl;
 
-    // 1. Nếu không có token, chuyển hướng đến trang đăng nhập.
+    // 1. Kiểm tra sự tồn tại của token
     if (!token) {
         return NextResponse.redirect(new URL("/login", request.url));
     }
 
-    // 2. Xác minh token.
-    const payload = await verifyToken(token);
-
-    // 3. Nếu token không hợp lệ, xóa cookie và redirect login
+    // 2. Giải mã token để lấy scope (không xác thực chữ ký ở edge)
+    const payload = decodeToken(token);
     if (!payload) {
         const response = NextResponse.redirect(new URL("/login", request.url));
+        // Xóa cookie hỏng để tránh vòng lặp lỗi
         response.cookies.delete("token");
         return response;
     }
 
-    const userRole = payload.scope;
+    // 3. Kiểm tra quyền truy cập dựa trên vai trò
+    const userRole = (payload.scope as Role) || ROLES.MEMBER;
 
-    // 4. Phân quyền dựa trên vai trò
-    if (pathname.startsWith("/admin") && userRole !== ROLES.ADMIN) {
-        return NextResponse.redirect(new URL("/unauthorized", request.url));
+    // Tìm quy tắc phân quyền phù hợp với đường dẫn hiện tại
+    const matchingPath = Object.keys(routePermissions).find((path) =>
+        pathname.startsWith(path)
+    );
+
+    if (matchingPath) {
+        const allowedRoles = routePermissions[matchingPath];
+        // Nếu vai trò của người dùng không nằm trong danh sách được phép
+        if (!allowedRoles.includes(userRole)) {
+            // Chuyển hướng đến trang không có quyền
+            return NextResponse.redirect(new URL("/unauthorized", request.url));
+        }
     }
 
-    if (
-        pathname.startsWith("/staff") &&
-        !(userRole === ROLES.STAFF || userRole === ROLES.ADMIN)
-    ) {
-        return NextResponse.redirect(new URL("/unauthorized", request.url));
-    }
-
-    if (pathname.startsWith("/member") && userRole !== ROLES.MEMBER) {
-        return NextResponse.redirect(new URL("/unauthorized", request.url));
-    }
-
-    // 5. Nếu hợp lệ thì cho đi tiếp
+    // 4. Cho phép truy cập nếu mọi thứ hợp lệ
     return NextResponse.next();
 }
 
-// Chỉ apply middleware cho các route cần bảo vệ
+// --- Cấu hình Matcher ---
 export const config = {
+    /*
+     * Áp dụng middleware cho tất cả các đường dẫn bắt đầu bằng:
+     * /admin, /staff, /member
+     */
     matcher: ["/admin/:path*", "/staff/:path*", "/member/:path*"],
 };
