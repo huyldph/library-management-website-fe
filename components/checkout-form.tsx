@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card } from "@/components/ui/card"
-import { getMembers, getBooks, getBookCopies, getLoans, saveLoans, saveBookCopies, saveMembers } from "@/lib/storage"
-import type { Member, Book, BookCopy, Loan } from "@/lib/types"
+import { findMemberByCode, type AdminMember } from "@/lib/api/members"
+import { fetchBookCopiesByBookId, fetchPublicBooks, type PublicBook, type PublicBookCopy } from "@/lib/api/books"
+import { checkout } from "@/lib/api/loans"
 import { useToast } from "@/hooks/use-toast"
 import { AlertCircle, CheckCircle, User, BookOpen } from "lucide-react"
 
@@ -18,9 +19,9 @@ interface CheckoutFormProps {
 export function CheckoutForm({ onSuccess }: CheckoutFormProps) {
   const [memberCode, setMemberCode] = useState("")
   const [barcode, setBarcode] = useState("")
-  const [member, setMember] = useState<Member | null>(null)
-  const [bookCopy, setBookCopy] = useState<BookCopy | null>(null)
-  const [book, setBook] = useState<Book | null>(null)
+  const [member, setMember] = useState<AdminMember | null>(null)
+  const [bookCopy, setBookCopy] = useState<PublicBookCopy | null>(null)
+  const [book, setBook] = useState<PublicBook | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
@@ -42,28 +43,37 @@ export function CheckoutForm({ onSuccess }: CheckoutFormProps) {
     }
   }, [barcode])
 
-  const findMember = (code: string) => {
-    const members = getMembers()
-    const found = members.find((m) => m.memberCode === code)
-    setMember(found || null)
+  const findMember = async (code: string) => {
+    const found = await findMemberByCode(code)
+    setMember(found)
   }
 
-  const findBookCopy = (code: string) => {
-    const bookCopies = getBookCopies()
-    const books = getBooks()
-    const found = bookCopies.find((bc) => bc.barcode === code)
-
-    if (found) {
-      const bookInfo = books.find((b) => b.id === found.bookId)
-      setBookCopy(found)
-      setBook(bookInfo || null)
-    } else {
-      setBookCopy(null)
-      setBook(null)
-    }
+  const findBookCopy = async (code: string) => {
+    // Tối giản: tìm qua endpoint copies? Nếu không có, tạm nạp qua all books rồi match barcode bằng API khác.
+    // Ở đây giả định backend cho phép tìm trực tiếp qua /book-copies?barcode=...
+    try {
+      const url = new URL(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/book-copies`)
+      url.searchParams.set("barcode", code)
+      const res = await fetch(url.toString())
+      const data = await res.json()
+      if (data?.code === 1000 && data?.result) {
+        const items = Array.isArray(data.result.items) ? data.result.items : Array.isArray(data.result) ? data.result : []
+        const found = items[0]
+        if (found) {
+          setBookCopy(found)
+          // nạp book theo bookId
+          const bookRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/books/${found.bookId}`)
+          const bookData = await bookRes.json()
+          setBook(bookData?.result || null)
+          return
+        }
+      }
+    } catch {}
+    setBookCopy(null)
+    setBook(null)
   }
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     setError("")
     setLoading(true)
 
@@ -80,7 +90,7 @@ export function CheckoutForm({ onSuccess }: CheckoutFormProps) {
       return
     }
 
-    if (member.currentBorrowCount >= member.maxBorrowLimit) {
+    if ((member.currentBorrowCount ?? 0) >= (member.maxBorrowLimit ?? 0)) {
       setError(`Độc giả đã đạt giới hạn mượn sách (${member.maxBorrowLimit} cuốn)`)
       setLoading(false)
       return
@@ -98,39 +108,12 @@ export function CheckoutForm({ onSuccess }: CheckoutFormProps) {
       return
     }
 
-    // Create loan
-    const loans = getLoans()
-    const borrowDate = new Date()
-    const dueDate = new Date()
-    dueDate.setDate(dueDate.getDate() + 14) // 14 days loan period
-
-    const newLoan: Loan = {
-      id: Date.now().toString(),
-      memberId: member.id,
-      bookCopyId: bookCopy.id,
-      bookId: book.id,
-      borrowDate,
-      dueDate,
-      status: "active",
-      renewalCount: 0,
-      maxRenewals: 2,
-      fineAmount: 0,
+    const res = await checkout({ memberCode, barcode })
+    if (!(res?.code === 1000)) {
+      setLoading(false)
+      setError(res?.message || "Không thể mượn sách")
+      return
     }
-
-    // Update book copy status
-    const bookCopies = getBookCopies()
-    const updatedCopies = bookCopies.map((bc) => (bc.id === bookCopy.id ? { ...bc, status: "borrowed" as const } : bc))
-
-    // Update member borrow count
-    const members = getMembers()
-    const updatedMembers = members.map((m) =>
-      m.id === member.id ? { ...m, currentBorrowCount: m.currentBorrowCount + 1 } : m,
-    )
-
-    // Save all changes
-    saveLoans([...loans, newLoan])
-    saveBookCopies(updatedCopies)
-    saveMembers(updatedMembers)
 
     toast({
       title: "Mượn sách thành công",
@@ -180,8 +163,9 @@ export function CheckoutForm({ onSuccess }: CheckoutFormProps) {
                   <p className="text-sm text-muted-foreground">
                     Đang mượn: {member.currentBorrowCount}/{member.maxBorrowLimit}
                   </p>
-                  {member.totalFines > 0 && (
-                    <p className="text-sm text-destructive">Phí phạt: {member.totalFines.toLocaleString("vi-VN")} ₫</p>
+                  {/* Optional fines field if backend provides */}
+                  {typeof (member as any).totalFines === "number" && (member as any).totalFines > 0 && (
+                    <p className="text-sm text-destructive">Phí phạt: {(member as any).totalFines.toLocaleString("vi-VN")} ₫</p>
                   )}
                 </div>
                 <CheckCircle className="h-5 w-5 text-green-700 dark:text-green-400" />

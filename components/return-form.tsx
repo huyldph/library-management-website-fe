@@ -7,8 +7,9 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { getMembers, getBooks, getBookCopies, getLoans, saveLoans, saveBookCopies, saveMembers } from "@/lib/storage"
-import type { Member, Book, BookCopy, Loan } from "@/lib/types"
+import type { AdminMember } from "@/lib/api/members"
+import type { PublicBook, PublicBookCopy } from "@/lib/api/books"
+import { returnBook, findActiveLoanByBarcode, type Loan } from "@/lib/api/loans"
 import { useToast } from "@/hooks/use-toast"
 import { AlertCircle, BookOpen } from "lucide-react"
 
@@ -19,9 +20,9 @@ interface ReturnFormProps {
 export function ReturnForm({ onSuccess }: ReturnFormProps) {
   const [barcode, setBarcode] = useState("")
   const [loan, setLoan] = useState<Loan | null>(null)
-  const [member, setMember] = useState<Member | null>(null)
-  const [book, setBook] = useState<Book | null>(null)
-  const [bookCopy, setBookCopy] = useState<BookCopy | null>(null)
+  const [member, setMember] = useState<AdminMember | null>(null)
+  const [book, setBook] = useState<PublicBook | null>(null)
+  const [bookCopy, setBookCopy] = useState<PublicBookCopy | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
@@ -41,36 +42,21 @@ export function ReturnForm({ onSuccess }: ReturnFormProps) {
     setBookCopy(null)
   }
 
-  const findActiveLoan = (code: string) => {
-    const loans = getLoans()
-    const bookCopies = getBookCopies()
-    const books = getBooks()
-    const members = getMembers()
-
-    const copy = bookCopies.find((bc) => bc.barcode === code)
-    if (!copy) {
+  const findActiveLoan = async (code: string) => {
+    const info = await findActiveLoanByBarcode(code)
+    if (!info) {
       resetState()
       return
     }
-
-    const activeLoan = loans.find((l) => l.bookCopyId === copy.id && (l.status === "active" || l.status === "overdue"))
-
-    if (activeLoan) {
-      const memberInfo = members.find((m) => m.id === activeLoan.memberId)
-      const bookInfo = books.find((b) => b.id === activeLoan.bookId)
-
-      setLoan(activeLoan)
-      setMember(memberInfo || null)
-      setBook(bookInfo || null)
-      setBookCopy(copy)
-    } else {
-      resetState()
-    }
+    setLoan(info.loan as Loan)
+    setMember(info.member as any)
+    setBook(info.book as any)
+    setBookCopy(info.copy as any)
   }
 
-  const calculateFine = (dueDate: Date): number => {
+  const calculateFine = (dueDate: Date | string): number => {
     const now = new Date()
-    const due = new Date(dueDate)
+    const due = new Date(dueDate as any)
 
     if (now <= due) return 0
 
@@ -78,7 +64,7 @@ export function ReturnForm({ onSuccess }: ReturnFormProps) {
     return daysOverdue * 5000 // 5,000 VND per day
   }
 
-  const handleReturn = () => {
+  const handleReturn = async () => {
     setError("")
     setLoading(true)
 
@@ -88,42 +74,12 @@ export function ReturnForm({ onSuccess }: ReturnFormProps) {
       return
     }
 
-    const fine = calculateFine(loan.dueDate)
-    const returnDate = new Date()
-
-    // Update loan
-    const loans = getLoans()
-    const updatedLoans = loans.map((l) =>
-      l.id === loan.id
-        ? {
-            ...l,
-            returnDate,
-            status: "returned" as const,
-            fineAmount: fine,
-          }
-        : l,
-    )
-
-    // Update book copy status
-    const bookCopies = getBookCopies()
-    const updatedCopies = bookCopies.map((bc) => (bc.id === bookCopy.id ? { ...bc, status: "available" as const } : bc))
-
-    // Update member
-    const members = getMembers()
-    const updatedMembers = members.map((m) =>
-      m.id === member.id
-        ? {
-            ...m,
-            currentBorrowCount: Math.max(0, m.currentBorrowCount - 1),
-            totalFines: m.totalFines + fine,
-          }
-        : m,
-    )
-
-    // Save all changes
-    saveLoans(updatedLoans)
-    saveBookCopies(updatedCopies)
-    saveMembers(updatedMembers)
+    const res = await returnBook({ barcode })
+    if (!(res?.code === 1000)) {
+      setLoading(false)
+      setError(res?.message || "Không thể trả sách")
+      return
+    }
 
     toast({
       title: "Trả sách thành công",

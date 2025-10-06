@@ -5,38 +5,55 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { getLoans, getBooks, getBookCopies } from "@/lib/storage"
-import type { Member, LoanHistory } from "@/lib/types"
+import type { AdminMember } from "@/lib/api/members"
+import { listLoans, type Loan } from "@/lib/api/loans"
+import { fetchPublicBook, fetchBookCopiesByBookId, type PublicBookCopy } from "@/lib/api/books"
 import { User, Mail, Phone, MapPin, Calendar, CreditCard } from "lucide-react"
 
+type MemberView = AdminMember & {
+  address?: string
+  dateOfBirth?: string | Date
+  expiryDate?: string | Date
+  totalFines?: number
+  currentBorrowCount?: number
+  maxBorrowLimit?: number
+  registrationDate?: string | Date
+}
+
 interface MemberDetailsDialogProps {
-  member: Member
+  member: MemberView
   open: boolean
   onClose: () => void
 }
 
-const statusColors = {
+const statusColors: Record<string, string> = {
   active: "bg-green-500/10 text-green-700 dark:text-green-400",
   suspended: "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400",
   expired: "bg-red-500/10 text-red-700 dark:text-red-400",
 }
 
-const statusLabels = {
+const statusLabels: Record<string, string> = {
   active: "Hoạt động",
   suspended: "Tạm ngưng",
   expired: "Hết hạn",
 }
 
-const loanStatusColors = {
+const loanStatusColors: Record<string, string> = {
   active: "bg-blue-500/10 text-blue-700 dark:text-blue-400",
   overdue: "bg-red-500/10 text-red-700 dark:text-red-400",
   returned: "bg-green-500/10 text-green-700 dark:text-green-400",
 }
 
-const loanStatusLabels = {
+const loanStatusLabels: Record<string, string> = {
   active: "Đang mượn",
   overdue: "Quá hạn",
   returned: "Đã trả",
+}
+
+type LoanHistory = Loan & {
+  memberName: string
+  bookTitle: string
+  bookBarcode: string
 }
 
 export function MemberDetailsDialog({ member, open, onClose }: MemberDetailsDialogProps) {
@@ -48,26 +65,31 @@ export function MemberDetailsDialog({ member, open, onClose }: MemberDetailsDial
     }
   }, [open, member.id])
 
-  const loadLoanHistory = () => {
-    const loans = getLoans()
-    const books = getBooks()
-    const bookCopies = getBookCopies()
+  const loadLoanHistory = async () => {
+    try {
+      const loans: Loan[] = await listLoans({ memberId: member.id })
+      const history: LoanHistory[] = await Promise.all(
+        loans.map(async (loan: Loan) => {
+          const [book, copies] = await Promise.all([
+            fetchPublicBook(loan.bookId),
+            fetchBookCopiesByBookId(loan.bookId),
+          ])
+          const bookCopy: PublicBookCopy | undefined = copies.find(
+            (copy: PublicBookCopy) => copy.id === loan.bookCopyId,
+          )
 
-    const memberLoans = loans.filter((l) => l.memberId === member.id)
-
-    const history: LoanHistory[] = memberLoans.map((loan) => {
-      const book = books.find((b) => b.id === loan.bookId)
-      const bookCopy = bookCopies.find((bc) => bc.id === loan.bookCopyId)
-
-      return {
-        ...loan,
-        memberName: member.fullName,
-        bookTitle: book?.title || "Unknown",
-        bookBarcode: bookCopy?.barcode || "Unknown",
-      }
-    })
-
-    setLoanHistory(history)
+          return {
+            ...loan,
+            memberName: member.fullName,
+            bookTitle: book?.title || "Unknown",
+            bookBarcode: bookCopy?.barcode || "Unknown",
+          }
+        }),
+      )
+      setLoanHistory(history)
+    } catch (e) {
+      setLoanHistory([])
+    }
   }
 
   return (
@@ -120,7 +142,7 @@ export function MemberDetailsDialog({ member, open, onClose }: MemberDetailsDial
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <div>
                   <p className="text-sm text-muted-foreground">Ngày sinh</p>
-                  <p className="font-medium">{new Date(member.dateOfBirth).toLocaleDateString("vi-VN")}</p>
+                  <p className="font-medium">{member.dateOfBirth ? new Date(member.dateOfBirth).toLocaleDateString("vi-VN") : "-"}</p>
                 </div>
               </div>
 
@@ -128,7 +150,7 @@ export function MemberDetailsDialog({ member, open, onClose }: MemberDetailsDial
                 <MapPin className="h-4 w-4 text-muted-foreground" />
                 <div>
                   <p className="text-sm text-muted-foreground">Địa chỉ</p>
-                  <p className="font-medium">{member.address}</p>
+                  <p className="font-medium">{member.address || "-"}</p>
                 </div>
               </div>
             </CardContent>
@@ -149,12 +171,12 @@ export function MemberDetailsDialog({ member, open, onClose }: MemberDetailsDial
 
               <div>
                 <p className="text-sm text-muted-foreground">Ngày đăng ký</p>
-                <p className="font-medium mt-1">{new Date(member.registrationDate).toLocaleDateString("vi-VN")}</p>
+                <p className="font-medium mt-1">{member.registrationDate ? new Date(member.registrationDate).toLocaleDateString("vi-VN") : "-"}</p>
               </div>
 
               <div>
                 <p className="text-sm text-muted-foreground">Ngày hết hạn</p>
-                <p className="font-medium mt-1">{new Date(member.expiryDate).toLocaleDateString("vi-VN")}</p>
+                <p className="font-medium mt-1">{member.expiryDate ? new Date(member.expiryDate).toLocaleDateString("vi-VN") : "-"}</p>
               </div>
 
               <div>
@@ -164,7 +186,7 @@ export function MemberDetailsDialog({ member, open, onClose }: MemberDetailsDial
                 </p>
               </div>
 
-              {member.totalFines > 0 && (
+              {typeof member.totalFines === "number" && member.totalFines > 0 && (
                 <div>
                   <p className="text-sm text-muted-foreground">Phí phạt</p>
                   <p className="font-medium text-destructive mt-1">{member.totalFines.toLocaleString("vi-VN")} ₫</p>
@@ -194,7 +216,7 @@ export function MemberDetailsDialog({ member, open, onClose }: MemberDetailsDial
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {loanHistory.map((loan) => (
+                      {loanHistory.map((loan: LoanHistory) => (
                         <TableRow key={loan.id}>
                           <TableCell className="font-medium">{loan.bookTitle}</TableCell>
                           <TableCell className="font-mono text-sm">{loan.bookBarcode}</TableCell>

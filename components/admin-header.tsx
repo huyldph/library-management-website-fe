@@ -14,22 +14,27 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { LogOut, User, BookOpen } from "lucide-react"
 import Link from "next/link"
+import { ROLES } from "@/lib/constants"
 
 export function AdminHeader() {
   const { user, logout } = useAuth()
   const router = useRouter()
 
   const handleLogout = () => {
+    // Clear state + token instantly
     logout()
-    router.push("/login")
+    // Replace to avoid back navigation returning to admin
+    router.replace("/login")
   }
 
-  const initials = user?.fullName
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2)
+  // Tạo ký hiệu avatar từ user.sub (UUID) hoặc mặc định
+  const initials = (user?.sub?.slice(0, 2) || "AD").toUpperCase()
+
+  const roleLabel = user?.scope === ROLES.ADMIN
+    ? "Quản trị viên"
+    : user?.scope === ROLES.STAFF
+      ? "Thủ thư"
+      : "Người dùng"
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -46,9 +51,15 @@ export function AdminHeader() {
             </Button>
           </Link>
 
-          <DropdownMenu>
+          {/* Nút đăng xuất hiển thị trực tiếp để dễ tìm thấy */}
+          <Button variant="outline" size="sm" onClick={handleLogout} className="hidden md:inline-flex">
+            <LogOut className="mr-2 h-4 w-4" />
+            Đăng xuất
+          </Button>
+
+          {/* <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+              <Button aria-label="Mở menu tài khoản" title="Tài khoản" variant="ghost" className="relative h-10 w-10 rounded-full">
                 <Avatar>
                   <AvatarFallback className="bg-primary text-primary-foreground">{initials}</AvatarFallback>
                 </Avatar>
@@ -57,11 +68,9 @@ export function AdminHeader() {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">{user?.fullName}</p>
-                  <p className="text-xs text-muted-foreground">{user?.email}</p>
-                  <p className="text-xs text-muted-foreground capitalize">
-                    Vai trò: {user?.role === "admin" ? "Quản trị viên" : "Thủ thư"}
-                  </p>
+                  <p className="text-sm font-medium">{user?.sub || "Tài khoản"}</p>
+                  <p className="text-xs text-muted-foreground">{user?.sub}</p>
+                  <p className="text-xs text-muted-foreground capitalize">Vai trò: {roleLabel}</p>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -75,7 +84,7 @@ export function AdminHeader() {
                 Đăng xuất
               </DropdownMenuItem>
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu> */}
         </div>
       </div>
     </header>
