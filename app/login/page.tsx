@@ -1,11 +1,13 @@
 "use client";
 
-import {useState, type FormEvent} from "react";
+import {useEffect, useState, type FormEvent} from "react";
 import {useRouter} from "next/navigation";
-import {login} from "@/lib/auth";
+import {login} from "@/lib/api/auth";
+import {jwtDecode} from "jwt-decode";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
+import Link from "next/link";
 import {
     Card,
     CardContent,
@@ -15,6 +17,21 @@ import {
 } from "@/components/ui/card";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {BookOpen, AlertCircle} from "lucide-react";
+import {ROLES} from "@/lib/constants";
+import {getToken} from "@/lib/token";
+
+// ✅ Kiểu payload của token
+interface TokenPayload {
+    sub: string;
+    scope: "ROLE_ADMIN" | "ROLE_STAFF" | "ROLE_MEMBER";
+}
+
+// ✅ Kiểu trả về từ API login()
+interface LoginResult {
+    success: boolean;
+    token?: string;
+    message?: string;
+}
 
 export default function LoginPage() {
     const router = useRouter();
@@ -23,17 +40,68 @@ export default function LoginPage() {
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
 
+    // Nếu đã có token hợp lệ, tự động chuyển hướng theo vai trò
+    useEffect(() => {
+        const token = getToken();
+        if (!token) return;
+        try {
+            const decoded = jwtDecode<TokenPayload>(token);
+            switch (decoded.scope) {
+                case ROLES.ADMIN:
+                    router.replace("/admin");
+                    return;
+                case ROLES.STAFF:
+                    router.replace("/staff");
+                    return;
+                case ROLES.MEMBER:
+                    router.replace("/member");
+                    return;
+                default:
+                    router.replace("/");
+                    return;
+            }
+        } catch {
+            // token không hợp lệ thì bỏ qua, để người dùng đăng nhập lại
+        }
+    }, [router]);
+
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         setError("");
         setLoading(true);
 
-        const result = await login(username, password);
+        try {
+            const result: LoginResult = await login(username, password);
 
-        if (result.success) {
-            router.push("/admin");
-        } else {
-            setError(result.message || "Đăng nhập thất bại");
+            if (result.success && result.token) {
+                try {
+                    const decoded = jwtDecode<TokenPayload>(result.token);
+                    switch (decoded.scope) {
+                        case ROLES.ADMIN:
+                            router.push("/admin");
+                            return;
+                        case ROLES.STAFF:
+                            router.push("/staff");
+                            return;
+                        case ROLES.MEMBER:
+                            router.push("/member");
+                            return;
+                        default:
+                            router.push("/");
+                            return;
+                    }
+                } catch (err) {
+                    console.error("Decode error:", err);
+                    setError("Token không hợp lệ từ máy chủ");
+                }
+            } else {
+                setError(result.message || "Đăng nhập thất bại");
+            }
+        } catch (err) {
+            console.error("Login request failed:", err);
+            setError("Không thể kết nối máy chủ. Vui lòng thử lại.");
+        } finally {
+            // Nếu chưa chuyển trang thì bỏ trạng thái loading
             setLoading(false);
         }
     };
@@ -90,6 +158,13 @@ export default function LoginPage() {
                         <Button type="submit" className="w-full" disabled={loading}>
                             {loading ? "Đang đăng nhập..." : "Đăng nhập"}
                         </Button>
+
+                        <p className="text-sm text-muted-foreground text-center">
+                            Chưa có tài khoản?{" "}
+                            <Link href="/register" className="text-primary hover:underline">
+                                Đăng ký
+                            </Link>
+                        </p>
                     </form>
                 </CardContent>
             </Card>
