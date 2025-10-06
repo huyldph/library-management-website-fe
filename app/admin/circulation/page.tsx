@@ -6,35 +6,44 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { CheckoutForm } from "@/components/checkout-form"
 import { ReturnForm } from "@/components/return-form"
 import { LoanHistoryTable } from "@/components/loan-history-table"
-import { getLoans, getMembers, getBooks, getBookCopies } from "@/lib/storage"
-import type { LoanHistory } from "@/lib/types"
+import { listLoans } from "@/lib/api/loans"
+import { listMembers } from "@/lib/api/members"
+import { fetchPublicBooks, fetchBookCopiesByBookId } from "@/lib/api/books"
+import type { Loan } from "@/lib/api/loans"
 
 export default function CirculationPage() {
-  const [loanHistory, setLoanHistory] = useState<LoanHistory[]>([])
+  const [loanHistory, setLoanHistory] = useState<any[]>([])
 
   useEffect(() => {
     loadLoanHistory()
   }, [])
 
-  const loadLoanHistory = () => {
-    const loans = getLoans()
-    const members = getMembers()
-    const books = getBooks()
-    const bookCopies = getBookCopies()
-
-    const history: LoanHistory[] = loans.map((loan) => {
-      const member = members.find((m) => m.id === loan.memberId)
-      const book = books.find((b) => b.id === loan.bookId)
-      const bookCopy = bookCopies.find((bc) => bc.id === loan.bookCopyId)
-
-      return {
-        ...loan,
-        memberName: member?.fullName || "Unknown",
-        bookTitle: book?.title || "Unknown",
-        bookBarcode: bookCopy?.barcode || "Unknown",
-      }
-    })
-
+  const loadLoanHistory = async () => {
+    const [loans, members, booksRes] = await Promise.all([
+      listLoans({ page: 1, size: 200 }),
+      listMembers({ page: 1, size: 200 }),
+      fetchPublicBooks({ page: 1, size: 200 }),
+    ])
+    const books = booksRes.items
+    const copyCache: Record<string, any[]> = {}
+    const getCopies = async (bookId: string) => {
+      if (!copyCache[bookId]) copyCache[bookId] = await fetchBookCopiesByBookId(bookId)
+      return copyCache[bookId]
+    }
+    const history = await Promise.all(
+      loans.map(async (loan: Loan) => {
+        const member = members.find((m) => m.id === loan.memberId)
+        const book = books.find((b) => b.id === loan.bookId)
+        const copies = loan.bookId ? await getCopies(loan.bookId) : []
+        const bookCopy = copies.find((c) => c.id === loan.bookCopyId)
+        return {
+          ...loan,
+          memberName: member?.fullName || "Unknown",
+          bookTitle: book?.title || "Unknown",
+          bookBarcode: bookCopy?.barcode || "Unknown",
+        }
+      })
+    )
     setLoanHistory(history)
   }
 
