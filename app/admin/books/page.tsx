@@ -13,8 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Plus, Search, Pencil, Trash2 } from "lucide-react"
-import { getBooks, saveBooks } from "@/lib/storage"
-import type { Book } from "@/lib/types"
+import { fetchPublicBooks, createBook, updateBook, deleteBook, type PublicBook } from "@/lib/api/books"
 import { BookForm } from "@/components/book-form"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -29,12 +28,12 @@ import {
 } from "@/components/ui/alert-dialog"
 
 export default function BooksPage() {
-  const [books, setBooks] = useState<Book[]>([])
-  const [filteredBooks, setFilteredBooks] = useState<Book[]>([])
+  const [books, setBooks] = useState<PublicBook[]>([])
+  const [filteredBooks, setFilteredBooks] = useState<PublicBook[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [editingBook, setEditingBook] = useState<Book | null>(null)
-  const [deletingBook, setDeletingBook] = useState<Book | null>(null)
+  const [editingBook, setEditingBook] = useState<PublicBook | null>(null)
+  const [deletingBook, setDeletingBook] = useState<PublicBook | null>(null)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -45,10 +44,10 @@ export default function BooksPage() {
     filterBooks()
   }, [searchQuery, books])
 
-  const loadBooks = () => {
-    const loadedBooks = getBooks()
-    setBooks(loadedBooks)
-    setFilteredBooks(loadedBooks)
+  const loadBooks = async () => {
+    const data = await fetchPublicBooks({ page: 1, size: 100 })
+    setBooks(data.items)
+    setFilteredBooks(data.items)
   }
 
   const filterBooks = () => {
@@ -68,58 +67,57 @@ export default function BooksPage() {
     setFilteredBooks(filtered)
   }
 
-  const handleAddBook = (bookData: Omit<Book, "id" | "createdAt" | "updatedAt">) => {
-    const newBook: Book = {
-      ...bookData,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
-
-    const updatedBooks = [...books, newBook]
-    saveBooks(updatedBooks)
-    setBooks(updatedBooks)
-    setIsAddDialogOpen(false)
-
-    toast({
-      title: "Thành công",
-      description: "Đã thêm sách mới",
+  const handleAddBook = async (bookData: any) => {
+    const res = await createBook({
+      title: bookData.title,
+      author: bookData.author,
+      isbn: bookData.isbn,
+      description: bookData.description,
+      publisher: bookData.publisher,
+      publishYear: bookData.publishYear,
+      category: bookData.category,
+      totalCopies: bookData.totalCopies,
     })
+    if (res?.code === 1000) {
+      await loadBooks()
+      setIsAddDialogOpen(false)
+      toast({ title: "Thành công", description: "Đã thêm sách mới" })
+    } else {
+      toast({ title: "Lỗi", description: res?.message || "Không thể thêm sách", variant: "destructive" })
+    }
   }
 
-  const handleEditBook = (bookData: Omit<Book, "id" | "createdAt" | "updatedAt">) => {
+  const handleEditBook = async (bookData: any) => {
     if (!editingBook) return
-
-    const updatedBook: Book = {
-      ...bookData,
-      id: editingBook.id,
-      createdAt: editingBook.createdAt,
-      updatedAt: new Date(),
-    }
-
-    const updatedBooks = books.map((b) => (b.id === editingBook.id ? updatedBook : b))
-    saveBooks(updatedBooks)
-    setBooks(updatedBooks)
-    setEditingBook(null)
-
-    toast({
-      title: "Thành công",
-      description: "Đã cập nhật thông tin sách",
+    const res = await updateBook(editingBook.id, {
+      title: bookData.title,
+      author: bookData.author,
+      isbn: bookData.isbn,
+      description: bookData.description,
+      publisher: bookData.publisher,
+      publishYear: bookData.publishYear,
+      category: bookData.category,
+      totalCopies: bookData.totalCopies,
     })
+    if (res?.code === 1000) {
+      await loadBooks()
+      setEditingBook(null)
+      toast({ title: "Thành công", description: "Đã cập nhật thông tin sách" })
+    } else {
+      toast({ title: "Lỗi", description: res?.message || "Không thể cập nhật sách", variant: "destructive" })
+    }
   }
 
-  const handleDeleteBook = () => {
+  const handleDeleteBook = async () => {
     if (!deletingBook) return
-
-    const updatedBooks = books.filter((b) => b.id !== deletingBook.id)
-    saveBooks(updatedBooks)
-    setBooks(updatedBooks)
-    setDeletingBook(null)
-
-    toast({
-      title: "Thành công",
-      description: "Đã xóa sách",
-    })
+    const res = await deleteBook(deletingBook.id)
+    if (res?.code === 1000) {
+      await loadBooks()
+      setDeletingBook(null)
+      toast({ title: "Thành công", description: "Đã xóa sách" })
+    } else {
+      toast({ title: "Lỗi", description: res?.message || "Không thể xóa sách", variant: "destructive" })
+    }
   }
 
   return (

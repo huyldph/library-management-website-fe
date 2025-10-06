@@ -6,8 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { getBooks, getBookCopies } from "@/lib/storage"
-import type { Book, BookCopy } from "@/lib/types"
+import { fetchPublicBook, fetchBookCopiesByBookId, type PublicBook, type PublicBookCopy } from "@/lib/api/books"
 import { ArrowLeft, BookOpen, Calendar, Building2, Hash, Tag } from "lucide-react"
 import Link from "next/link"
 import { PublicHeader } from "@/components/public-header"
@@ -29,24 +28,20 @@ const statusLabels = {
 export default function BookDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const [book, setBook] = useState<Book | null>(null)
-  const [copies, setCopies] = useState<BookCopy[]>([])
+  const [book, setBook] = useState<PublicBook | null>(null)
+  const [copies, setCopies] = useState<PublicBookCopy[]>([])
 
   useEffect(() => {
     loadBookDetails()
   }, [params.id])
 
-  const loadBookDetails = () => {
-    const books = getBooks()
-    const foundBook = books.find((b) => b.id === params.id)
-
-    if (foundBook) {
-      setBook(foundBook)
-
-      const bookCopies = getBookCopies()
-      const bookSpecificCopies = bookCopies.filter((bc) => bc.bookId === foundBook.id)
-      setCopies(bookSpecificCopies)
-    }
+  const loadBookDetails = async () => {
+    const id = String(params.id)
+    const foundBook = await fetchPublicBook(id)
+    if (!foundBook) return
+    setBook(foundBook)
+    const bookCopies = await fetchBookCopiesByBookId(foundBook.id)
+    setCopies(bookCopies)
   }
 
   if (!book) {
@@ -85,9 +80,9 @@ export default function BookDetailPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <Badge variant="secondary">{book.category}</Badge>
-                    {book.availableCopies > 0 ? (
+                    {(book.availableCopies ?? 0) > 0 ? (
                       <Badge className="bg-green-500/10 text-green-700 dark:text-green-400">
-                        {book.availableCopies} bản có sẵn
+                        {book.availableCopies ?? 0} bản có sẵn
                       </Badge>
                     ) : (
                       <Badge variant="destructive">Hết sách</Badge>
@@ -169,8 +164,11 @@ export default function BookDetailPage() {
                           <TableCell>{copy.location}</TableCell>
                           <TableCell className="capitalize">{copy.condition}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary" className={statusColors[copy.status]}>
-                              {statusLabels[copy.status]}
+                            <Badge
+                              variant="secondary"
+                              className={statusColors[(copy.status as keyof typeof statusColors) || "available"]}
+                            >
+                              {statusLabels[(copy.status as keyof typeof statusLabels) || "available"]}
                             </Badge>
                           </TableCell>
                         </TableRow>

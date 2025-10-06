@@ -14,8 +14,8 @@ import {
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Search, Pencil, Trash2 } from "lucide-react"
-import { getBooks, getBookCopies, saveBookCopies } from "@/lib/storage"
-import type { Book, BookCopy } from "@/lib/types"
+import { fetchPublicBooks, type PublicBook } from "@/lib/api/books"
+import { listBookCopies, createBookCopy, updateBookCopy, deleteBookCopy, type AdminBookCopy } from "@/lib/api/book-copies"
 import { BookCopyForm } from "@/components/book-copy-form"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -44,9 +44,9 @@ const statusLabels = {
 }
 
 export default function BookCopiesPage() {
-  const [books, setBooks] = useState<Book[]>([])
-  const [bookCopies, setBookCopies] = useState<BookCopy[]>([])
-  const [filteredCopies, setFilteredCopies] = useState<BookCopy[]>([])
+  const [books, setBooks] = useState<PublicBook[]>([])
+  const [bookCopies, setBookCopies] = useState<AdminBookCopy[]>([])
+  const [filteredCopies, setFilteredCopies] = useState<AdminBookCopy[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [editingCopy, setEditingCopy] = useState<BookCopy | null>(null)
@@ -61,9 +61,10 @@ export default function BookCopiesPage() {
     filterCopies()
   }, [searchQuery, bookCopies])
 
-  const loadData = () => {
-    setBooks(getBooks())
-    const copies = getBookCopies()
+  const loadData = async () => {
+    const b = await fetchPublicBooks({ page: 1, size: 200 })
+    setBooks(b.items)
+    const copies = await listBookCopies({ page: 1, size: 200 })
     setBookCopies(copies)
     setFilteredCopies(copies)
   }
@@ -90,54 +91,39 @@ export default function BookCopiesPage() {
     return books.find((b) => b.id === bookId)?.title || "Unknown"
   }
 
-  const handleAddCopy = (copyData: Omit<BookCopy, "id">) => {
-    const newCopy: BookCopy = {
-      ...copyData,
-      id: Date.now().toString(),
+  const handleAddCopy = async (copyData: Omit<AdminBookCopy, "id">) => {
+    const res = await createBookCopy(copyData)
+    if (res?.code === 1000) {
+      await loadData()
+      setIsAddDialogOpen(false)
+      toast({ title: "Thành công", description: "Đã thêm bản sao mới" })
+    } else {
+      toast({ title: "Lỗi", description: res?.message || "Không thể thêm bản sao", variant: "destructive" })
     }
-
-    const updatedCopies = [...bookCopies, newCopy]
-    saveBookCopies(updatedCopies)
-    setBookCopies(updatedCopies)
-    setIsAddDialogOpen(false)
-
-    toast({
-      title: "Thành công",
-      description: "Đã thêm bản sao mới",
-    })
   }
 
-  const handleEditCopy = (copyData: Omit<BookCopy, "id">) => {
+  const handleEditCopy = async (copyData: Omit<AdminBookCopy, "id">) => {
     if (!editingCopy) return
-
-    const updatedCopy: BookCopy = {
-      ...copyData,
-      id: editingCopy.id,
+    const res = await updateBookCopy(editingCopy.id, copyData)
+    if (res?.code === 1000) {
+      await loadData()
+      setEditingCopy(null)
+      toast({ title: "Thành công", description: "Đã cập nhật thông tin bản sao" })
+    } else {
+      toast({ title: "Lỗi", description: res?.message || "Không thể cập nhật bản sao", variant: "destructive" })
     }
-
-    const updatedCopies = bookCopies.map((c) => (c.id === editingCopy.id ? updatedCopy : c))
-    saveBookCopies(updatedCopies)
-    setBookCopies(updatedCopies)
-    setEditingCopy(null)
-
-    toast({
-      title: "Thành công",
-      description: "Đã cập nhật thông tin bản sao",
-    })
   }
 
-  const handleDeleteCopy = () => {
+  const handleDeleteCopy = async () => {
     if (!deletingCopy) return
-
-    const updatedCopies = bookCopies.filter((c) => c.id !== deletingCopy.id)
-    saveBookCopies(updatedCopies)
-    setBookCopies(updatedCopies)
-    setDeletingCopy(null)
-
-    toast({
-      title: "Thành công",
-      description: "Đã xóa bản sao",
-    })
+    const res = await deleteBookCopy(deletingCopy.id)
+    if (res?.code === 1000) {
+      await loadData()
+      setDeletingCopy(null)
+      toast({ title: "Thành công", description: "Đã xóa bản sao" })
+    } else {
+      toast({ title: "Lỗi", description: res?.message || "Không thể xóa bản sao", variant: "destructive" })
+    }
   }
 
   return (
@@ -204,8 +190,11 @@ export default function BookCopiesPage() {
                   <TableCell>{copy.location}</TableCell>
                   <TableCell className="capitalize">{copy.condition}</TableCell>
                   <TableCell>
-                    <Badge variant="secondary" className={statusColors[copy.status]}>
-                      {statusLabels[copy.status]}
+                    <Badge
+                      variant="secondary"
+                      className={statusColors[(copy.status as keyof typeof statusColors) || "available"]}
+                    >
+                      {statusLabels[(copy.status as keyof typeof statusLabels) || "available"]}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
