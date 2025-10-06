@@ -2,21 +2,12 @@
 
 import type React from "react"
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { AdminHeader } from "@/components/admin-header"
 import { AdminNav } from "@/components/admin-nav"
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, loading } = useAuth()
-  const router = useRouter()
-
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login")
-    }
-  }, [isAuthenticated, loading, router])
+  const { loading } = useAuth()
 
   if (loading) {
     return (
@@ -27,10 +18,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </div>
     )
-  }
-
-  if (!isAuthenticated) {
-    return null
   }
 
   return (
