@@ -5,18 +5,18 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { getBooks } from "@/lib/storage"
-import type { Book } from "@/lib/types"
+import { fetchPublicBooks, type PublicBook } from "@/lib/api/books"
 import { Search, BookOpen, Filter } from "lucide-react"
 import Link from "next/link"
 import { PublicHeader } from "@/components/public-header"
 
 export default function OpacPage() {
-  const [books, setBooks] = useState<Book[]>([])
-  const [filteredBooks, setFilteredBooks] = useState<Book[]>([])
+  const [books, setBooks] = useState<PublicBook[]>([])
+  const [filteredBooks, setFilteredBooks] = useState<PublicBook[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [categories, setCategories] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     loadBooks()
@@ -26,14 +26,18 @@ export default function OpacPage() {
     filterBooks()
   }, [searchQuery, categoryFilter, books])
 
-  const loadBooks = () => {
-    const loadedBooks = getBooks()
-    setBooks(loadedBooks)
-    setFilteredBooks(loadedBooks)
-
-    // Extract unique categories
-    const uniqueCategories = Array.from(new Set(loadedBooks.map((b) => b.category)))
-    setCategories(uniqueCategories)
+  const loadBooks = async () => {
+    setLoading(true)
+    const res = await fetchPublicBooks({ query: "", category: "", page: 1, size: 48 })
+    setBooks(res.items)
+    setFilteredBooks(res.items)
+    if (res.categories && Array.isArray(res.categories)) {
+      setCategories(res.categories)
+    } else {
+      const unique = Array.from(new Set(res.items.map((b) => b.category).filter(Boolean))) as string[]
+      setCategories(unique)
+    }
+    setLoading(false)
   }
 
   const filterBooks = () => {
@@ -42,18 +46,18 @@ export default function OpacPage() {
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(
-        (book) =>
-          book.title.toLowerCase().includes(query) ||
-          book.author.toLowerCase().includes(query) ||
-          book.isbn.toLowerCase().includes(query) ||
-          book.description.toLowerCase().includes(query),
-      )
+      filtered = filtered.filter((book) => {
+        const title = (book.title || "").toLowerCase()
+        const author = (book.author || "").toLowerCase()
+        const isbn = (book.isbn || "").toLowerCase()
+        const desc = (book.description || "").toLowerCase()
+        return title.includes(query) || author.includes(query) || isbn.includes(query) || desc.includes(query)
+      })
     }
 
     // Apply category filter
     if (categoryFilter !== "all") {
-      filtered = filtered.filter((book) => book.category === categoryFilter)
+      filtered = filtered.filter((book) => (book.category || "") === categoryFilter)
     }
 
     setFilteredBooks(filtered)
@@ -112,7 +116,9 @@ export default function OpacPage() {
         <div className="max-w-6xl mx-auto">
           <div className="mb-4 flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Tìm thấy <span className="font-medium text-foreground">{filteredBooks.length}</span> kết quả
+              {loading ? "Đang tải..." : (
+                <>Tìm thấy <span className="font-medium text-foreground">{filteredBooks.length}</span> kết quả</>
+              )}
             </p>
           </div>
 
@@ -132,31 +138,29 @@ export default function OpacPage() {
                     <CardHeader>
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <Badge variant="secondary">{book.category}</Badge>
-                        {book.availableCopies > 0 ? (
+                        {(book.availableCopies ?? 0) > 0 ? (
                           <Badge className="bg-green-500/10 text-green-700 dark:text-green-400">Có sẵn</Badge>
                         ) : (
                           <Badge variant="destructive">Hết sách</Badge>
                         )}
                       </div>
                       <CardTitle className="line-clamp-2 text-balance">{book.title}</CardTitle>
-                      <CardDescription className="line-clamp-1">{book.author}</CardDescription>
+                      <CardDescription className="line-clamp-1">{book.author || ""}</CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm text-muted-foreground line-clamp-3 mb-4">{book.description}</p>
+                      <p className="text-sm text-muted-foreground line-clamp-3 mb-4">{book.description || ""}</p>
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Nhà xuất bản:</span>
-                          <span className="font-medium">{book.publisher}</span>
+                          <span className="font-medium">{book.publisher || "-"}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Năm xuất bản:</span>
-                          <span className="font-medium">{book.publishYear}</span>
+                          <span className="font-medium">{book.publishYear ?? "-"}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Còn lại:</span>
-                          <span className="font-medium">
-                            {book.availableCopies}/{book.totalCopies}
-                          </span>
+                          <span className="font-medium">{book.availableCopies ?? 0}/{book.totalCopies ?? 0}</span>
                         </div>
                       </div>
                     </CardContent>
