@@ -1,8 +1,8 @@
 "use client";
-
 import {createContext, useContext, useEffect, useState, ReactNode} from "react";
-import {getToken, logout} from "@/lib/auth";
+import {getToken, clearToken} from "@/lib/token";
 import {jwtDecode} from "jwt-decode";
+import {logout as apiLogout} from "@/lib/api/auth";
 
 interface User {
     sub: string;
@@ -28,19 +28,22 @@ export function AuthProvider({children}: { children: ReactNode }) {
             try {
                 const decoded = jwtDecode<User>(token);
                 setUser(decoded);
-            } catch (e) {
-                console.error("Token decode failed:", e);
+            } catch {
+                clearToken();
                 setUser(null);
             }
-        } else {
-            setUser(null);
         }
         setLoading(false);
     }, []);
 
     const handleLogout = () => {
-        logout();
+        // Clear session immediately for snappy UX
+        clearToken();
         setUser(null);
+        // Fire-and-forget API logout; do not block UI
+        try {
+            void apiLogout();
+        } catch {}
     };
 
     return (
