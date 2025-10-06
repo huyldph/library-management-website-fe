@@ -11,21 +11,22 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { BookOpen, Calendar, AlertCircle, CreditCard, Clock, CheckCircle } from "lucide-react"
-import { getMembers, getLoans, getBooks, getBookCopies, renewLoan } from "@/lib/storage"
-import type { Member, Loan, Book, BookCopy } from "@/lib/types"
+import { getMyProfile, type AdminMember } from "@/lib/api/members"
+import { listLoans, type Loan } from "@/lib/api/loans"
+import { fetchPublicBooks, fetchBookCopiesByBookId, type PublicBook, type PublicBookCopy } from "@/lib/api/books"
 import { format, differenceInDays } from "date-fns"
 import { vi } from "date-fns/locale"
 
 export default function MemberDashboardPage() {
   const { user, logout } = useAuth()
   const router = useRouter()
-  const [member, setMember] = useState<Member | null>(null)
-  const [activeLoans, setActiveLoans] = useState<(Loan & { book: Book; copy: BookCopy })[]>([])
-  const [loanHistory, setLoanHistory] = useState<(Loan & { book: Book; copy: BookCopy })[]>([])
+  const [member, setMember] = useState<AdminMember | null>(null)
+  const [activeLoans, setActiveLoans] = useState<(Loan & { book: PublicBook; copy: PublicBookCopy })[]>([])
+  const [loanHistory, setLoanHistory] = useState<(Loan & { book: PublicBook; copy: PublicBookCopy })[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    if (!user || user.role !== "member") {
+    if (!user || user.scope !== "ROLE_MEMBER") {
       router.push("/member/login")
       return
     }
@@ -33,39 +34,40 @@ export default function MemberDashboardPage() {
     loadMemberData()
   }, [user, router])
 
-  const loadMemberData = () => {
-    if (!user) return
-
-    const members = getMembers()
-    const foundMember = members.find((m) => m.cardNumber === user.username)
-
-    if (foundMember) {
-      setMember(foundMember)
-
-      const loans = getLoans()
-      const books = getBooks()
-      const copies = getBookCopies()
-
-      const memberLoans = loans
-        .filter((loan) => loan.memberId === foundMember.id)
-        .map((loan) => {
-          const copy = copies.find((c) => c.id === loan.bookCopyId)!
-          const book = books.find((b) => b.id === copy.bookId)!
-          return { ...loan, book, copy }
-        })
-
-      setActiveLoans(memberLoans.filter((loan) => loan.status === "borrowed"))
-      setLoanHistory(memberLoans.filter((loan) => loan.status === "returned"))
+  const loadMemberData = async () => {
+    const me = await getMyProfile()
+    if (!me) {
+      setIsLoading(false)
+      return
     }
+    setMember(me)
 
+    const [loans, booksRes] = await Promise.all([
+      listLoans({ memberId: me.id, page: 1, size: 200 }),
+      fetchPublicBooks({ page: 1, size: 200 }),
+    ])
+    const books = booksRes.items
+    const copyCache: Record<string, PublicBookCopy[]> = {}
+    const getCopies = async (bookId: string) => {
+      if (!copyCache[bookId]) copyCache[bookId] = await fetchBookCopiesByBookId(bookId)
+      return copyCache[bookId]
+    }
+    const memberLoans = await Promise.all(
+      loans.map(async (loan) => {
+        const copies = await getCopies(loan.bookId)
+        const copy = copies.find((c) => c.id === loan.bookCopyId) as PublicBookCopy
+        const book = books.find((b) => b.id === (copy?.bookId || loan.bookId)) as PublicBook
+        return { ...loan, book, copy }
+      })
+    )
+
+    setActiveLoans(memberLoans.filter((loan) => loan.status === "active" || loan.status === "overdue"))
+    setLoanHistory(memberLoans.filter((loan) => loan.status === "returned"))
     setIsLoading(false)
   }
 
-  const handleRenew = (loanId: string) => {
-    const success = renewLoan(loanId)
-    if (success) {
-      loadMemberData()
-    }
+  const handleRenew = (_loanId: string) => {
+    // TODO: nếu backend có API renew, thêm vào lib/api/loans và gọi ở đây
   }
 
   const handleLogout = () => {
@@ -95,7 +97,7 @@ export default function MemberDashboardPage() {
     )
   }
 
-  const isExpired = new Date(member.expiryDate) < new Date()
+  const isExpired = member?.registrationDate ? false : false
   const overdueLoans = activeLoans.filter((loan) => new Date(loan.dueDate) < new Date())
 
   return (
@@ -109,7 +111,7 @@ export default function MemberDashboardPage() {
             </div>
             <div>
               <h1 className="text-xl font-bold">Tài khoản thành viên</h1>
-              <p className="text-sm text-muted-foreground">{member.name}</p>
+              <p className="text-sm text-muted-foreground">{member.fullName}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -151,10 +153,8 @@ export default function MemberDashboardPage() {
               <CreditCard className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{member.cardNumber}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Hạn: {format(new Date(member.expiryDate), "dd/MM/yyyy")}
-              </p>
+              <div className="text-2xl font-bold">{member.memberCode}</div>
+              <p className="text-xs text-muted-foreground mt-1">Ngày đăng ký: {member.registrationDate ? format(new Date(member.registrationDate as any), "dd/MM/yyyy") : "-"}</p>
             </CardContent>
           </Card>
 
@@ -165,7 +165,7 @@ export default function MemberDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{activeLoans.length}</div>
-              <p className="text-xs text-muted-foreground mt-1">Tối đa: {member.borrowLimit} sách</p>
+              <p className="text-xs text-muted-foreground mt-1">Tối đa: {member.maxBorrowLimit ?? 0} sách</p>
             </CardContent>
           </Card>
 
@@ -186,8 +186,8 @@ export default function MemberDashboardPage() {
               <AlertCircle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{member.fines.toLocaleString("vi-VN")} ₫</div>
-              <p className="text-xs text-muted-foreground mt-1">Cần thanh toán</p>
+              <div className="text-2xl font-bold">{(member as any).totalFines ? (member as any).totalFines.toLocaleString("vi-VN") : 0} ₫</div>
+              <p className="text-sm text-muted-foreground mt-1">Cần thanh toán</p>
             </CardContent>
           </Card>
         </div>
@@ -268,13 +268,13 @@ export default function MemberDashboardPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => handleRenew(loan.id)}
-                            disabled={loan.renewalCount >= 2 || isOverdue}
+                            disabled={(loan.renewalCount ?? 0) >= 2 || isOverdue}
                           >
-                            {loan.renewalCount >= 2 ? "Đã gia hạn tối đa" : "Gia hạn"}
+                            {(loan.renewalCount ?? 0) >= 2 ? "Đã gia hạn tối đa" : "Gia hạn"}
                           </Button>
                         </div>
                       </div>
-                      {loan.renewalCount > 0 && (
+                      {(loan.renewalCount ?? 0) > 0 && (
                         <p className="text-xs text-muted-foreground mt-2">Đã gia hạn {loan.renewalCount} lần</p>
                       )}
                     </CardContent>
@@ -324,12 +324,12 @@ export default function MemberDashboardPage() {
                           <span>{format(new Date(loan.returnDate), "dd/MM/yyyy", { locale: vi })}</span>
                         </div>
                       )}
-                      {loan.fineAmount > 0 && (
+                      {(loan.fineAmount ?? 0) > 0 && (
                         <div className="flex items-center gap-2">
                           <AlertCircle className="h-4 w-4 text-destructive" />
                           <span className="text-muted-foreground">Phí phạt:</span>
                           <span className="text-destructive font-medium">
-                            {loan.fineAmount.toLocaleString("vi-VN")} ₫
+                            {(loan.fineAmount ?? 0).toLocaleString("vi-VN")} ₫
                           </span>
                         </div>
                       )}
@@ -351,11 +351,11 @@ export default function MemberDashboardPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label className="text-sm font-medium text-muted-foreground">Họ và tên</Label>
-                    <p className="text-base">{member.name}</p>
+                    <p className="text-base">{member.fullName}</p>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm font-medium text-muted-foreground">Số thẻ</Label>
-                    <p className="text-base">{member.cardNumber}</p>
+                    <p className="text-base">{member.memberCode}</p>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm font-medium text-muted-foreground">Email</Label>
@@ -367,32 +367,29 @@ export default function MemberDashboardPage() {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm font-medium text-muted-foreground">Địa chỉ</Label>
-                    <p className="text-base">{member.address}</p>
+                    <p className="text-base">{(member as any).address || ""}</p>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm font-medium text-muted-foreground">Loại thành viên</Label>
-                    <p className="text-base capitalize">{member.type}</p>
+                    <p className="text-base capitalize">{member.membershipType}</p>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm font-medium text-muted-foreground">Ngày đăng ký</Label>
-                    <p className="text-base">{format(new Date(member.joinDate), "dd/MM/yyyy", { locale: vi })}</p>
+                    <p className="text-base">{member.registrationDate ? format(new Date(member.registrationDate as any), "dd/MM/yyyy", { locale: vi }) : "-"}</p>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm font-medium text-muted-foreground">Ngày hết hạn</Label>
-                    <p className={`text-base ${isExpired ? "text-destructive" : ""}`}>
-                      {format(new Date(member.expiryDate), "dd/MM/yyyy", { locale: vi })}
-                      {isExpired && " (Đã hết hạn)"}
-                    </p>
+                    <p className="text-base">-</p>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm font-medium text-muted-foreground">Giới hạn mượn</Label>
-                    <p className="text-base">{member.borrowLimit} sách</p>
+                    <p className="text-base">{member.maxBorrowLimit ?? 0} sách</p>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm font-medium text-muted-foreground">Trạng thái</Label>
                     <div>
-                      <Badge variant={member.status === "active" ? "default" : "secondary"}>
-                        {member.status === "active" ? "Đang hoạt động" : "Tạm khóa"}
+                      <Badge variant={member.membershipStatus === "active" ? "default" : "secondary"}>
+                        {member.membershipStatus === "active" ? "Đang hoạt động" : "Tạm khóa"}
                       </Badge>
                     </div>
                   </div>
