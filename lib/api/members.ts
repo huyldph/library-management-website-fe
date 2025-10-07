@@ -78,4 +78,19 @@ export async function getMyProfile(): Promise<AdminMember | null> {
   return null;
 }
 
+// Public (non-auth) self-registration for member card
+export async function publicRegisterMember(input: {
+  fullName: string;
+  email: string;
+  phoneNumber: string;
+  address: string;
+}) {
+  const res = await fetch(`${API_URL}/api/v1/members/public-register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return res.json();
+}
+
 
