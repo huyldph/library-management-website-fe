@@ -8,14 +8,13 @@ type Role = typeof ROLES[keyof typeof ROLES];
 const routePermissions: Record<string, Role[]> = {
     "/admin": [ROLES.ADMIN],
     "/staff": [ROLES.ADMIN, ROLES.STAFF],
-    "/member": [ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER],
 };
 
 // --- Hàm trợ giúp ---
 function decodeToken(token: string) {
     try {
         const payload = decodeJwt(token);
-        return payload as { sub?: string; scope?: "ROLE_ADMIN" | "ROLE_STAFF" | "ROLE_MEMBER" };
+        return payload as { sub?: string; scope?: "ROLE_ADMIN" | "ROLE_STAFF" };
     } catch {
         return null;
     }
@@ -41,7 +40,10 @@ export async function middleware(request: NextRequest) {
     }
 
     // 3. Kiểm tra quyền truy cập dựa trên vai trò
-    const userRole = (payload.scope as Role) || ROLES.MEMBER;
+    if (!payload.scope) {
+        return NextResponse.redirect(new URL("/unauthorized", request.url));
+    }
+    const userRole = payload.scope as Role;
 
     // Tìm quy tắc phân quyền phù hợp với đường dẫn hiện tại
     const matchingPath = Object.keys(routePermissions).find((path) =>
@@ -65,7 +67,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
     /*
      * Áp dụng middleware cho tất cả các đường dẫn bắt đầu bằng:
-     * /admin, /staff, /member
+     * /admin, /staff
      */
-    matcher: ["/admin/:path*", "/staff/:path*", "/member/:path*"],
+    matcher: ["/admin/:path*", "/staff/:path*"],
 };
