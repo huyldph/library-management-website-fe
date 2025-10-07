@@ -34,7 +34,7 @@ export default function OpacPage() {
     if (res.categories && Array.isArray(res.categories)) {
       setCategories(res.categories)
     } else {
-      const unique = Array.from(new Set(res.items.map((b) => b.category).filter(Boolean))) as string[]
+      const unique = Array.from(new Set(res.items.map((b) => b.categoryName).filter(Boolean))) as string[]
       setCategories(unique)
     }
     setLoading(false)
@@ -57,7 +57,7 @@ export default function OpacPage() {
 
     // Apply category filter
     if (categoryFilter !== "all") {
-      filtered = filtered.filter((book) => (book.category || "") === categoryFilter)
+      filtered = filtered.filter((book) => (book.categoryName || "") === categoryFilter)
     }
 
     setFilteredBooks(filtered)
@@ -65,7 +65,7 @@ export default function OpacPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <PublicHeader />
+      <PublicHeader mode="opac" />
 
       <main className="container mx-auto px-4 py-8">
         {/* Hero Section */}
@@ -133,11 +133,20 @@ export default function OpacPage() {
           ) : (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {filteredBooks.map((book) => (
-                <Link key={book.id} href={`/opac/books/${book.id}`}>
+                <Link key={book.bookId} href={`/opac/books/${book.bookId}`}>
                   <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer">
                     <CardHeader>
+                      {book.imageUrl ? (
+                        <div className="mb-3">
+                          <img
+                            src={book.imageUrl}
+                            alt={book.title}
+                            className="h-48 w-full rounded object-contain bg-muted"
+                          />
+                        </div>
+                      ) : null}
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <Badge variant="secondary">{book.category}</Badge>
+                        <Badge variant="secondary">{book.categoryName}</Badge>
                         {(book.availableCopies ?? 0) > 0 ? (
                           <Badge className="bg-green-500/10 text-green-700 dark:text-green-400">Có sẵn</Badge>
                         ) : (
@@ -148,15 +157,14 @@ export default function OpacPage() {
                       <CardDescription className="line-clamp-1">{book.author || ""}</CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm text-muted-foreground line-clamp-3 mb-4">{book.description || ""}</p>
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Nhà xuất bản:</span>
-                          <span className="font-medium">{book.publisher || "-"}</span>
+                          <span className="font-medium">{book.publisherName || "-"}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Năm xuất bản:</span>
-                          <span className="font-medium">{book.publishYear ?? "-"}</span>
+                          <span className="font-medium">{book.publicationYear ?? "-"}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Còn lại:</span>

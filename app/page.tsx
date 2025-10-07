@@ -1,32 +1,55 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/components/ui/button";
+import { BookOpen, Shield } from "lucide-react";
 
 export default function HomePage() {
     const router = useRouter();
-    const { isAuthenticated, loading, user } = useAuth();
+    const { user, isAuthenticated, loading } = useAuth();
 
-    useEffect(() => {
-        if (!loading) {
-            if (isAuthenticated) {
-                // Điều hướng theo role
-                if (user?.scope === "ROLE_ADMIN") router.push("/admin");
-                else if (user?.scope === "ROLE_STAFF") router.push("/staff");
-                else if (user?.scope === "ROLE_MEMBER") router.push("/member");
-            } else {
-                router.push("/login");
+    const goReader = () => {
+        router.push("/opac");
+    };
+
+    const goManager = () => {
+        if (loading) return;
+        if (isAuthenticated && user?.scope) {
+            if (user.scope === "ROLE_ADMIN") {
+                router.push("/admin");
+                return;
             }
+            if (user.scope === "ROLE_STAFF") {
+                router.push("/staff");
+                return;
+            }
+            // Không phải admin/staff thì yêu cầu đăng nhập lại để vào khu quản lý
         }
-    }, [isAuthenticated, loading, user, router]);
+        router.push("/login");
+    };
 
     return (
-        <div className="flex min-h-screen items-center justify-center">
-            <div className="text-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto" />
-                <p className="mt-4 text-muted-foreground">Đang tải...</p>
-            </div>
-        </div>
+        <main className="min-h-screen bg-muted/20">
+            <section className="container mx-auto flex min-h-screen flex-col items-center justify-center px-6 text-center">
+                <div className="mb-8 flex items-center justify-center gap-3">
+                    <BookOpen className="h-10 w-10 text-primary" />
+                    <h1 className="text-3xl font-bold">Hệ thống quản lý thư viện</h1>
+                </div>
+                <p className="mb-10 max-w-2xl text-muted-foreground">
+                    Nền tảng tra cứu và quản lý tài nguyên thư viện. Vui lòng chọn vai trò phù hợp để tiếp tục.
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-4">
+                    <Button size="lg" onClick={goReader}>
+                        <BookOpen className="mr-2 h-5 w-5" />
+                        Người Đọc
+                    </Button>
+                    <Button size="lg" variant="secondary" onClick={goManager}>
+                        <Shield className="mr-2 h-5 w-5" />
+                        Thủ thư
+                    </Button>
+                </div>
+            </section>
+        </main>
     );
 }

@@ -16,7 +16,7 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import {Alert, AlertDescription} from "@/components/ui/alert";
-import {BookOpen, AlertCircle} from "lucide-react";
+import {BookOpen, AlertCircle, Home} from "lucide-react";
 import {ROLES} from "@/lib/constants";
 import {getToken} from "@/lib/token";
 
@@ -53,9 +53,6 @@ export default function LoginPage() {
                 case ROLES.STAFF:
                     router.replace("/staff");
                     return;
-                case ROLES.MEMBER:
-                    router.replace("/member");
-                    return;
                 default:
                     router.replace("/");
                     return;
@@ -82,9 +79,6 @@ export default function LoginPage() {
                             return;
                         case ROLES.STAFF:
                             router.push("/staff");
-                            return;
-                        case ROLES.MEMBER:
-                            router.push("/member");
                             return;
                         default:
                             router.push("/");
@@ -157,6 +151,10 @@ export default function LoginPage() {
 
                         <Button type="submit" className="w-full" disabled={loading}>
                             {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+                        </Button>
+
+                        <Button asChild variant="outline" className="w-full">
+                            <Link href="/">Về trang chủ</Link>
                         </Button>
 
                         <p className="text-sm text-muted-foreground text-center">

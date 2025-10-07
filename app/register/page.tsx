@@ -14,7 +14,8 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import {Alert, AlertDescription} from "@/components/ui/alert";
-import {BookOpen, AlertCircle} from "lucide-react";
+import {BookOpen, AlertCircle, Home} from "lucide-react";
+import Link from "next/link";
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -127,6 +128,10 @@ export default function RegisterPage() {
 
                         <Button type="submit" className="w-full" disabled={loading}>
                             {loading ? "Đang đăng ký..." : "Đăng ký"}
+                        </Button>
+
+                        <Button asChild variant="outline" className="w-full">
+                            <Link href="/">Về trang chủ</Link>
                         </Button>
 
                         <p className="text-center text-sm text-muted-foreground mt-2">
