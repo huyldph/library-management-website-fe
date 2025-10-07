@@ -24,7 +24,7 @@ export function AdminHeader() {
     // Clear state + token instantly
     logout()
     // Replace to avoid back navigation returning to admin
-    router.replace("/login")
+    router.replace("/")
   }
 
   // Tạo ký hiệu avatar từ user.sub (UUID) hoặc mặc định
@@ -45,9 +45,9 @@ export function AdminHeader() {
         </div>
 
         <div className="flex items-center gap-4">
-          <Link href="/opac">
+          <Link href="/">
             <Button variant="outline" size="sm">
-              Trang công khai
+              Trang chủ
             </Button>
           </Link>
 
@@ -56,35 +56,6 @@ export function AdminHeader() {
             <LogOut className="mr-2 h-4 w-4" />
             Đăng xuất
           </Button>
-
-          {/* <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button aria-label="Mở menu tài khoản" title="Tài khoản" variant="ghost" className="relative h-10 w-10 rounded-full">
-                <Avatar>
-                  <AvatarFallback className="bg-primary text-primary-foreground">{initials}</AvatarFallback>
-                </Avatar>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">{user?.sub || "Tài khoản"}</p>
-                  <p className="text-xs text-muted-foreground">{user?.sub}</p>
-                  <p className="text-xs text-muted-foreground capitalize">Vai trò: {roleLabel}</p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <User className="mr-2 h-4 w-4" />
-                Thông tin cá nhân
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-destructive">
-                <LogOut className="mr-2 h-4 w-4" />
-                Đăng xuất
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu> */}
         </div>
       </div>
     </header>
