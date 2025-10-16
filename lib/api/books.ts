@@ -6,14 +6,14 @@ export type PublicBook = {
     bookId: string;
     title: string;
     author: string;
-    imageUrl?: string;
-    isbn?: string;
-    description?: string;
-    publisherName?: string;
-    publicationYear?: number;
-    categoryName?: string;
-    availableCopies?: number;
-    totalCopies?: number;
+    imageUrl: string;
+    isbn: string;
+    description: string;
+    publisherName: string;
+    publicationYear: number;
+    categoryName: string;
+    availableCopies: number;
+    totalCopies: number;
 };
 
 export type PublicBookCopy = {
