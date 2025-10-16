@@ -2,31 +2,68 @@
 
 import Link from "next/link"
 import {Button} from "@/components/ui/button"
-import {BookOpen, User} from "lucide-react"
+import {BookOpen} from "lucide-react"
 import {useRouter} from "next/navigation"
 import {useEffect, useRef, useState} from "react"
+import { findMemberByCode } from "@/lib/api/members"
+import { useToast } from "@/hooks/use-toast"
 
 type PublicHeaderProps = {
     mode?: "default" | "opac"
 }
 
-export function PublicHeader({mode = "default"}: PublicHeaderProps) {
+export function PublicHeader({ mode: _mode = "default" }: PublicHeaderProps) {
     const router = useRouter()
+    const { toast } = useToast()
     const [memberQuery, setMemberQuery] = useState("")
     const [isScanning, setIsScanning] = useState(false)
     const videoRef = useRef<HTMLVideoElement | null>(null)
     const streamRef = useRef<MediaStream | null>(null)
     const scanIntervalRef = useRef<number | null>(null)
 
-    function goToMemberPage(identifier: string) {
-        const id = identifier.trim()
-        if (!id) return
-        router.push(`/member/${encodeURIComponent(id)}`)
+    async function handleMemberSearch(identifier: string) {
+        const id = identifier?.trim()
+        if (!id) {
+            toast({
+                title: "Lỗi",
+                description: "Vui lòng nhập số thẻ thành viên.",
+                variant: "destructive"
+            })
+            return
+        }
+        
+        try {
+            const found = await findMemberByCode(id)
+            if (found) {
+                // Clear the search input
+                setMemberQuery("")
+                // Show success message
+                toast({
+                    title: "Tìm thấy thành viên",
+                    description: `Chào mừng ${found.fullName}! Đang chuyển hướng...`,
+                })
+                // redirect to member home
+                router.push(`/member/${encodeURIComponent(id)}`)
+            } else {
+                toast({
+                    title: "Không tìm thấy thành viên",
+                    description: `Không tìm thấy thành viên với số thẻ "${id}". Vui lòng kiểm tra lại.`,
+                    variant: "destructive"
+                })
+            }
+        } catch (err) {
+            console.error("Error searching member:", err)
+            toast({
+                title: "Lỗi",
+                description: "Có lỗi khi tìm thành viên. Vui lòng thử lại.",
+                variant: "destructive"
+            })
+        }
     }
 
     function onSubmit(e: React.FormEvent) {
         e.preventDefault()
-        goToMemberPage(memberQuery)
+        void handleMemberSearch(memberQuery)
     }
 
     async function startQrScan() {
@@ -52,7 +89,8 @@ export function PublicHeader({mode = "default"}: PublicHeaderProps) {
                     if (barcodes && barcodes.length > 0) {
                         const raw = barcodes[0].rawValue as string
                         await stopQrScan()
-                        goToMemberPage(raw)
+                        // Use the same lookup flow as manual search
+                        await handleMemberSearch(raw)
                         return
                     }
                 } catch {
@@ -104,8 +142,8 @@ export function PublicHeader({mode = "default"}: PublicHeaderProps) {
                         <input
                             value={memberQuery}
                             onChange={(e) => setMemberQuery(e.target.value)}
-                            placeholder="Nhập số thẻ hoặc nội dung QR"
-                            className="h-9 w-56 rounded-md border px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                            placeholder="Tìm kiếm thành viên với mã thẻ"
+                            className="h-9 w-64 rounded-md border px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
                         />
                         <Button type="submit" variant="default">Tìm</Button>
                         <Button type="button" variant="ghost" onClick={startQrScan}>
